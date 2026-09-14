@@ -1,0 +1,121 @@
+name: Sync upstream
+
+# 跟上游 fancyboi999/goofish-cli 保持同步，但**始终保留本 fork 的既定差异**：
+# 默认浏览器后端是 amcu（用户自己已登录的 Chrome，后台标签页，不弹窗），
+# 不是 Playwright（每次新起一个系统 Chrome 窗口）。
+#
+# 策略：
+#   干净合并 + 守门检查通过 → 直接推 main
+#   有冲突，或上游把 Playwright 改回默认 → 不推 main，开一个 PR 让人来判
+on:
+  schedule:
+    - cron: "17 3 * * *"   # 每天 03:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: upstream-sync
+  cancel-in-progress: false
+
+env:
+  UPSTREAM: https://github.com/fancyboi999/goofish-cli.git
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Configure git
+        run: |
+          git config user.name  "upstream-sync[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Fetch upstream
+        id: fetch
+        run: |
+          git remote add upstream "$UPSTREAM" 2>/dev/null || git remote set-url upstream "$UPSTREAM"
+          git fetch upstream main
+          behind=$(git rev-list --count HEAD..upstream/main)
+          echo "behind=$behind" >> "$GITHUB_OUTPUT"
+          echo "落后上游 $behind 个提交"
+
+      - name: Nothing to do
+        if: steps.fetch.outputs.behind == '0'
+        run: echo "已经是最新，跳过。"
+
+      - name: Try clean merge
+        if: steps.fetch.outputs.behind != '0'
+        id: merge
+        run: |
+          if git merge --no-edit upstream/main; then
+            echo "merged=clean" >> "$GITHUB_OUTPUT"
+          else
+            git merge --abort || true
+            echo "merged=conflict" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Guard — amcu must stay the default backend
+        if: steps.merge.outputs.merged == 'clean'
+        id: guard
+        continue-on-error: true
+        run: python scripts/check_amcu_backend.py
+
+      - name: Run tests
+        if: steps.merge.outputs.merged == 'clean' && steps.guard.outcome == 'success'
+        id: tests
+        continue-on-error: true
+        run: |
+          pip install uv
+          uv venv
+          uv pip install -e ".[dev]"
+          uv run pytest -q
+
+      - name: Push to main
+        if: |
+          steps.merge.outputs.merged == 'clean' &&
+          steps.guard.outcome == 'success' &&
+          steps.tests.outcome == 'success'
+        run: |
+          git push origin HEAD:main
+          echo "✓ 上游变更已合并进 main，amcu 仍是默认后端。"
+
+      # 冲突 / 守门失败 / 测试失败 → 转 PR，人工处理，绝不自动覆盖 main
+      - name: Open a PR instead
+        if: |
+          steps.fetch.outputs.behind != '0' && (
+            steps.merge.outputs.merged == 'conflict' ||
+            steps.guard.outcome == 'failure' ||
+            steps.tests.outcome == 'failure'
+          )
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          branch="upstream-sync/$(date +%Y%m%d-%H%M%S)"
+          git checkout -B "$branch" upstream/main
+          git push -f origin "$branch"
+
+          if [ "${{ steps.merge.outputs.merged }}" = "conflict" ]; then
+            reason="合并有冲突，需要人工解决。"
+          elif [ "${{ steps.guard.outcome }}" = "failure" ]; then
+            reason="合并干净，但**守门检查失败**：上游可能把 Playwright 改回了默认后端。合并时请保留 amcu 为默认。"
+          else
+            reason="合并干净、守门通过，但测试挂了。"
+          fi
+
+          gh pr create \
+            --title "同步上游（需人工处理）" \
+            --body "$(printf '%s\n\n%s\n\n%s\n' \
+              "自动同步 upstream/main 时没能直接推进 main。" \
+              "**原因**：$reason" \
+              "本 fork 的既定差异：默认浏览器后端是 amcu（\`core/amcu.py\`），Playwright 仅作可选回退。合并后请跑 \`python scripts/check_amcu_backend.py\` 确认。")" \
+            --base main --head "$branch" || echo "PR 可能已存在"

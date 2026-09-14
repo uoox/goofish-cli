@@ -41,6 +41,15 @@
 
 > 架构思想来自 [opencli](https://github.com/jackwener/opencli) 的 single-registry 设计。
 
+> [!NOTE]
+> **本仓库是 [fancyboi999/goofish-cli](https://github.com/fancyboi999/goofish-cli) 的 fork，
+> 只改一件事：浏览器层默认走 [amcu](https://github.com/uoox/amcu) 而不是 Playwright。**
+> 上游每次搜索都会新起一个系统 Chrome、开一个可见窗口（无头会被闲鱼风控拦）；
+> 本 fork 直接用你已经开着、已经登录的那个 Chrome，标签页开在后台窗口里，
+> 不弹窗、不抢焦点、不新建 profile。调用方代码一行未改，
+> `GOOFISH_BROWSER_BACKEND=playwright` 可切回上游路线。
+> 细节见 [docs/amcu-backend.md](docs/amcu-backend.md)。
+
 ---
 
 ## ✨ 核心特性
@@ -163,7 +172,7 @@ $ goofish list-commands --format table
 | `category recommend` | AI 识别商品类目 | ❌ |
 | `location default` | 获取默认发布地址 | ❌ |
 | `message list-chats` | 拉取会话列表（左栏；`--watch-secs N` 叠加 WS 历史推送补漏） | ❌ |
-| `search items` | 搜索闲鱼商品（浏览器路径 Playwright + 系统 Chrome） | ❌ |
+| `search items` | 搜索闲鱼商品（浏览器路径，默认 amcu 驱动你已登录的 Chrome） | ❌ |
 | `item view` | 浏览器视角看商品详情（字段完整，抗风控；`item get` 的姊妹版） | ❌ |
 | `message history` | 拉取会话历史消息 | ❌ |
 | `message send` | 发送文本/图片 | ✅ |

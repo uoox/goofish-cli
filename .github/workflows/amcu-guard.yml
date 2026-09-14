@@ -1,0 +1,17 @@
+name: amcu backend guard
+
+# 任何推送 / PR 都确认一次：amcu 仍是默认后端，Playwright 仍只是可选依赖。
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python scripts/check_amcu_backend.py

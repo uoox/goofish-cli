@@ -1,4 +1,14 @@
-"""Playwright 浏览器上下文 —— 吸纳 OpenCLI 的浏览器自动化路线。
+"""浏览器上下文。**默认走 amcu 后端**（见 `core/amcu.py`），Playwright 作为可选回退。
+
+本 fork 与上游的唯一行为差异就在这里：`goofish_page()` 默认把活交给 amcu，
+在用户自己那个已经登录的 Chrome 里开后台标签页——不弹窗、不新建 profile。
+`GOOFISH_BROWSER_BACKEND=playwright` 可切回上游原路线（需 `pip install
+goofish-cli[playwright]`）。下面保留的是上游的 Playwright 实现，原样不动，
+以便跟上游合并时冲突最小。
+
+──────────── 以下为上游原始说明 ────────────
+
+Playwright 浏览器上下文 —— 吸纳 OpenCLI 的浏览器自动化路线。
 
 设计要点（用户明确要求）：
 1. **用系统 Chrome**（`channel="chrome"`），不用 playwright 自带的 bundled chromium——
@@ -34,6 +44,16 @@ from goofish_cli.core.cookie_types import CookieRecord
 from goofish_cli.core.session import Session
 
 PROFILES_PARENT = Path.home() / ".goofish-cli" / "profiles"
+
+BACKEND_AMCU = "amcu"
+BACKEND_PLAYWRIGHT = "playwright"
+DEFAULT_BACKEND = BACKEND_AMCU
+
+
+def backend() -> str:
+    """选后端。默认 amcu；`GOOFISH_BROWSER_BACKEND=playwright` 切回上游路线。"""
+    value = (os.environ.get("GOOFISH_BROWSER_BACKEND") or DEFAULT_BACKEND).strip().lower()
+    return value if value in (BACKEND_AMCU, BACKEND_PLAYWRIGHT) else DEFAULT_BACKEND
 
 # 淘系签名链路 cookie（历史上跨 .taobao.com），其余默认落 .goofish.com。
 # 仅用于 legacy flat dict 格式（无 domain 信息时）的窄映射兜底。
@@ -105,6 +125,17 @@ async def goofish_page(
             await page.goto("https://www.goofish.com/search?q=foo")
             ...
     """
+    if backend() == BACKEND_AMCU:
+        from goofish_cli.core.amcu import goofish_page_amcu
+
+        # amcu 跑的是用户真实、已登录的 Chrome：cookies / headless 两个参数
+        # 在这条路上没有意义（没有空白 profile 要灌，也没有窗口要藏）。
+        if cookies is not None:
+            logger.debug("[amcu] 忽略显式 cookies —— 用的是浏览器自身的登录态")
+        async with goofish_page_amcu(viewport=viewport) as page:
+            yield page
+        return
+
     from playwright.async_api import async_playwright
 
     if headless is None:
