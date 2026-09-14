@@ -470,6 +470,32 @@ async def goofish_page_amcu(
             logger.debug(f"[amcu] 关闭标签页 {page.tab_id} 失败（忽略）：{e}")
 
 
+PROFILE_SOURCE = "amcu-profile"
+
+
+async def acookies_from_profile(url: str = "https://www.goofish.com/") -> list[dict[str, Any]]:
+    """直接从用户 Chrome profile 取登录态。
+
+    上游的做法是另起一个浏览器实例走扫码/磁盘库；我们既然已经跑在用户自己的
+    Chrome 上，登录态本来就在那儿——开个后台标签页导航到闲鱼，服务端会把
+    `_m_h5_tk` 刷新进 profile，然后从 `AmcuContext.cookies()`（document.cookie
+    ＋ 磁盘库 httpOnly）读回来即可。不弹窗，所以命令行场景也能用。
+    """
+    async with goofish_page_amcu(url=url) as page:
+        return await page.context.cookies()
+
+
+def cookies_from_profile(url: str = "https://www.goofish.com/") -> list[dict[str, Any]]:
+    """`acookies_from_profile` 的同步封装；auth / session 两处都是同步调用方。"""
+    return asyncio.run(acookies_from_profile(url))
+
+
+def profile_auth_available() -> bool:
+    """只有后端确实是 amcu、且 amcu 可用时，才该走 profile 取 auth。"""
+    from goofish_cli.core.browser import BACKEND_AMCU, backend
+    return backend() == BACKEND_AMCU and is_available()
+
+
 __test__ = {
     "wrap_js": wrap_js,
     "_ms_to_s": _ms_to_s,

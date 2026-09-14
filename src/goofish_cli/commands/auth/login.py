@@ -107,6 +107,13 @@ def _pull_from_browser(browser: str) -> tuple[list[CookieRecord], str]:
         available_browsers,
         extract_goofish_cookies,
     )
+    # fork 专属：后端是 amcu 时先从用户 Chrome profile 直取登录态——不另起浏览器、
+    # 不弹窗，命令行下也能拿到。拿不全关键字段就静默退回上游的 browser_cookie3 路径。
+    if browser in ("", "auto"):
+        profile = _try_profile_cookies()
+        if profile is not None:
+            return profile
+
     try:
         used, cookies = extract_goofish_cookies(browser=browser)
         return cookies, f"browser:{used}"
@@ -120,6 +127,25 @@ def _pull_from_browser(browser: str) -> tuple[list[CookieRecord], str]:
             f"  3. 手动导出 JSON：`goofish auth login ~/Downloads/cookies.json`\n"
             f"  4. 粘 cookie 字符串：`goofish auth login 'unb=...; _m_h5_tk=...' --raw`"
         ) from e
+
+
+def _try_profile_cookies() -> tuple[list[CookieRecord], str] | None:
+    """从 amcu 所用的 Chrome profile 取登录态；不可用或字段不全返回 None。"""
+    try:
+        from goofish_cli.core.amcu import (
+            PROFILE_SOURCE,
+            cookies_from_profile,
+            profile_auth_available,
+        )
+        if not profile_auth_available():
+            return None
+        records = _coerce_records({c["name"]: c["value"] for c in cookies_from_profile()})
+        flat = {r["name"]: r["value"] for r in records}
+        if "unb" in flat and "_m_h5_tk" in flat:
+            return records, PROFILE_SOURCE
+    except Exception:  # noqa: BLE001 — 静默退回上游路径
+        return None
+    return None
 
 
 def _parse_raw(raw: str) -> dict[str, str]:

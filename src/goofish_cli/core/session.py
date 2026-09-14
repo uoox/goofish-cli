@@ -150,6 +150,24 @@ def _load_or_bootstrap_cookies(path: Path) -> list[CookieRecord]:
 
 def _bootstrap_from_browser() -> tuple[str, list[CookieRecord]]:
     """单独封装一层，方便测试时 monkeypatch。"""
+    # fork 专属：amcu 后端下先从用户 Chrome profile 直取（见 core/amcu.py）。
+    # 这里挂一层，是为了让所有 mtop 命令在没有 cookies.json 时都能自动可用，
+    # 而不只是 `goofish auth login`。失败就照旧走 browser_cookie3。
+    try:
+        from goofish_cli.core.amcu import (
+            PROFILE_SOURCE,
+            cookies_from_profile,
+            profile_auth_available,
+        )
+        if profile_auth_available():
+            records = _coerce_records(cookies_from_profile())
+            flat = _records_to_flat(records)
+            if "unb" in flat and "_m_h5_tk" in flat:
+                return PROFILE_SOURCE, records
+            logger.debug("浏览器 profile 里缺 unb / _m_h5_tk，回退 browser_cookie3")
+    except Exception as e:  # noqa: BLE001 — profile 取不到不该挡住上游路径
+        logger.debug(f"从浏览器 profile 取登录态失败（回退）：{e}")
+
     from goofish_cli.core.browser_cookie import extract_goofish_cookies
     return extract_goofish_cookies(browser="auto")
 
