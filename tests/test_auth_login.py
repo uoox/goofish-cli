@@ -9,7 +9,6 @@ from typer.testing import CliRunner
 from goofish_cli.cli import app
 from goofish_cli.commands.auth import login as login_mod
 from goofish_cli.core import session as session_mod
-from goofish_cli.core.crypto import decrypt_cookies
 
 
 @pytest.fixture
@@ -97,36 +96,3 @@ def test_file_path_is_accepted_as_cli_argument(fake_target, tmp_path):
     assert fake_target.exists()
 
 
-def test_qr_login_preserves_domain_and_path_in_persisted_records(fake_target, monkeypatch):
-    """review-3 P1-B：QR 登录返回的 CookieRecord 必须保留 domain/path，
-    不能退化为 flat dict 后再 coerce——否则写盘后 domain="" path="/"。
-
-    通过 `auth login --qr` 端到端验证 persisted cookies.json 内容。
-    """
-    fake_records = [
-        {"name": "_m_h5_tk", "value": "tk_abc", "domain": ".taobao.com", "path": "/"},
-        {"name": "unb", "value": "U12345", "domain": ".goofish.com", "path": "/"},
-        {"name": "cookie2", "value": "c2_val", "domain": ".taobao.com", "path": "/"},
-        {"name": "tracknick", "value": "nicky", "domain": ".goofish.com", "path": "/account"},
-    ]
-
-    # login_via_qr 在 login.py 里是局部 import，patch 底层模块而非引用名
-    monkeypatch.setattr(
-        "goofish_cli.core.qr_login.login_via_qr",
-        lambda **_: fake_records,
-    )
-
-    out = login_mod.login(qr=True)
-    assert out["source"] == "qr"
-    assert out["unb"] == "U12345"
-
-    # 磁盘里是加密格式，解密后验证 domain / path 完整
-    persisted = decrypt_cookies(fake_target.read_bytes())
-    assert isinstance(persisted, list)
-    domains = {r["domain"] for r in persisted}
-    assert ".taobao.com" in domains, "QR cookie 应保留 .taobao.com domain"
-    assert ".goofish.com" in domains, "QR cookie 应保留 .goofish.com domain"
-    # tracknick 有非根 path
-    track_rec = next((r for r in persisted if r["name"] == "tracknick"), None)
-    assert track_rec is not None
-    assert track_rec["path"] == "/account", "QR cookie 应保留非根 path /account"

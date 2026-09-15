@@ -19,7 +19,7 @@
 |---|---|---|---|
 | `item_get` | HTTP 视角拉详情（只读） | `item_id` | 无 |
 | `item_list` | 查看当前账号的在售商品 | `limit?` | 无 |
-| `item_view` | 浏览器视角拉详情（字段更全、抗风控） | `item_id` | 触发 Playwright 启动 |
+| `item_view` | 浏览器视角拉详情（字段更全、抗风控） | `item_id` | 走 amcu 后台标签页，不弹窗 |
 | `item_publish` | 发布商品（自动类目+默认地址） | `title, desc, price, image_urls, cat_id?, addr?` | **写操作**，令牌桶 1 写/分钟 |
 | `item_delete` | 下架/删除商品 | `item_id` | **写操作** + 风控护栏 |
 
@@ -77,8 +77,8 @@ auth_status → search_items (用自家核心词，买家视角) → item_view (
 
 | 错误 | 含义 | 处理 |
 |---|---|---|
-| `FAIL_SYS_TOKEN_EXOIRED` | `_m_h5_tk` 过期（10 分钟 TTL） | 自动刷 token（已内置），Agent 无需干预 |
-| `FAIL_SYS_SESSION_EXPIRED` | `cookie2` session 失效 | 自动点 passport "快速进入"；失败则提示用户 `goofish auth login --qr` |
+| `FAIL_SYS_TOKEN_EXOIRED` | `_m_h5_tk` 过期（10 分钟 TTL） | 每次调用都从页面实时读，基本不会出现；Agent 无需干预 |
+| `FAIL_SYS_SESSION_EXPIRED` | `cookie2` session 失效 | 用户在浏览器里掉登录了——提示他登录 https://www.goofish.com（无扫码流程） |
 | `FAIL_SYS_ILLEGAL_ACCESS` | 风控拒绝 | **不要连续重试**（会加深风控）；按 `goofish-risk-guard/references/x5sec-recovery.md` 走——让用户从浏览器重导 cookie，或停手 2-6 小时 |
 | `RATE_LIMITED` | 本地令牌桶耗尽 | 等下一分钟 |
 | `GUARD_TRIPPED` | 本地熔断（连续风控触发） | `auth_reset_guard` + 从浏览器重导 cookie |

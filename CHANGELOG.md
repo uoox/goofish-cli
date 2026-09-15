@@ -6,6 +6,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+- **mtop 请求改由浏览器页面发出**（`core/amcu.py::mtop_post`）。`cookie2`（真正的
+  session token）是 httpOnly，Python 进程既读不到也灌不进去，从进程直发的 mtop
+  一律 `FAIL_SYS_SESSION_EXPIRED`。改成在 goofish.com 页面内
+  `fetch(credentials:'include')` 之后，cookie2 由浏览器自动附带，`auth status`
+  首次返回 `valid: true`。签名仍在 Python 算，只有**传输**搬进了页面。
+- `_m_h5_tk` 改为从页面实时读取（`h5_token_from_page()`）。它只有 10 分钟寿命、
+  靠浏览器活跃访问续期，从磁盘快照读经常是"抓的时候没过期、用的时候已过"。
+
+### Removed
+- **彻底移除 Playwright**：删除 `core/qr_login.py`、`core/refresh.py`、
+  `auth login --qr`、`GOOFISH_BROWSER_BACKEND` 后端开关、`GOOFISH_AUTO_REFRESH_TOKEN`
+  开关，以及 `playwright` 可选依赖。这些东西存在的唯一理由都是"设法把 cookie2 弄到
+  手"，而页内 fetch 让这个前提不再需要。上游那条路线拿不到有效登录态，留作可选回退
+  只会是个"看起来能切、切过去必然鉴权失败"的陷阱。
+- 登录方式随之简化为：**在你自己的 Chrome 里登录闲鱼**，没有扫码流程。
+
 ## [0.4.0] - 2026-09-07
 
 ### Added

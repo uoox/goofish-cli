@@ -17,27 +17,29 @@
 | `x5sec` | 风控通行（可选） | RGV587 风险时需要重导 |
 | `tracknick` | 昵称跟踪 | — |
 
-## 自动续命链路（v0.2.2 - v0.2.4）
+## 登录态怎么来的（本 fork）
+
+mtop 请求在 goofish.com **页面内**发出，`cookie2` 由浏览器自动附带——既然不需要
+读它，上游那套"自动续命"（`refresh_cookies_via_browser` 点"快速进入"）和扫码兜底
+（`auth login --qr`）就都没有存在理由，已连同 Playwright 整个删除。
 
 ```
-mtop 调用 → FAIL_SYS_TOKEN_EXOIRED
+mtop 调用 → core/mtop.py 算签名（_m_h5_tk 从页面实时读，不用磁盘快照）
    ↓
-refresh_cookies_via_browser（自动）
+core/amcu.py::mtop_post → 在闲鱼页面内 fetch(credentials:'include')
    ↓
-Playwright goto 首页 → 若弹 #alibaba-login-box → 点"快速进入"免密登录
-   ↓
-goto /bought 触发完整 session cookie 下发 → 合并回 session → 重试原请求
+浏览器自动带上 httpOnly 的 cookie2 → 返回 JSON
 ```
 
-如果**浏览器免密记忆失效**（换机 / 清 cookie / 首次用），自动链路失败。
-此时用户需显式 `goofish auth login --qr` 扫码。**Agent 不主动调 auth_login**。
+**登录方式就是你在自己的 Chrome 里登录闲鱼。** 掉登录的表现是 `auth status` 回
+`valid: false`、mtop 一律 `FAIL_SYS_SESSION_EXPIRED`；注意**搜索仍然正常**
+（闲鱼匿名也能搜），所以"搜索能用"不能拿来判断登录还在——这点很容易误判。
+**Agent 不主动调 auth_login**。
 
 ## 环境变量
 
 | 变量 | 作用 |
 |---|---|
 | `GOOFISH_COOKIES_PATH` | 自定义 cookies.json 路径 |
-| `GOOFISH_AUTO_REFRESH_TOKEN=0` | 关掉自动刷新（CI 用） |
-| `GOOFISH_QR_TIMEOUT=N` | 扫码超时秒数（默认 120） |
 | `GOOFISH_HEADLESS=1` | 浏览器 headless（会触发风控，慎用） |
 | `GOOFISH_NO_CHROME_BOOTSTRAP=1` | 禁止从本机 Chrome 自动抓 cookie |

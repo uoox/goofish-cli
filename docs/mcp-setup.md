@@ -8,7 +8,7 @@ ClawHub 发布后安装：
 
 ```bash
 openclaw plugins install clawhub:openclaw-goofish
-uvx --from goofish-cli==0.4.0 goofish auth login --qr
+# 登录态来自你自己的 Chrome：打开并登录 https://www.goofish.com 即可，没有扫码命令
 openclaw plugins inspect goofish --json
 openclaw gateway restart
 ```

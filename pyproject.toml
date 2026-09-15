@@ -37,12 +37,6 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# 上游默认用 Playwright 驱动一个全新的系统 Chrome（会弹窗）。本 fork 默认走 amcu
-# 后端（用户自己已登录的 Chrome，后台标签页），所以 Playwright 降级为可选依赖，
-# 只有显式 GOOFISH_BROWSER_BACKEND=playwright 时才需要。
-playwright = [
-  "playwright>=1.58.0",
-]
 dev = [
   "pytest>=8.0",
   "pytest-asyncio>=0.23",

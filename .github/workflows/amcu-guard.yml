@@ -1,6 +1,6 @@
 name: amcu backend guard
 
-# 任何推送 / PR 都确认一次：amcu 仍是默认后端，Playwright 仍只是可选依赖。
+# 任何推送 / PR 都确认一次：amcu 仍是唯一后端，Playwright 没有被重新引入。
 on:
   push:
     branches: [main]

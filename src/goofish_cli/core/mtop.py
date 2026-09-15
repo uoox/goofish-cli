@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import time
 from typing import Any
+from urllib.parse import urlencode
 
 from loguru import logger
 
@@ -70,22 +71,24 @@ def call(
     spm_cnt: str = "a21ybx.home.0.0",
     extra_params: dict[str, str] | None = None,
     headers: dict[str, str] | None = None,
-    _auto_refresh: bool = True,
 ) -> dict[str, Any]:
     """调用 mtop 接口。返回原始 JSON。失败抛 GoofishError 子类。
 
-    `_auto_refresh=True`：遇到 token 层（`FAIL_SYS_TOKEN_EXOIRED`）或 session 层
-    （`FAIL_SYS_SESSION_EXPIRED`）失效时，自动用 Playwright 访问闲鱼首页 + 点
-    passport 弹窗的"快速进入"免密登录刷新 cookie 后重试一次。递归调用时置 False
-    避免死循环。
+    请求**在浏览器页面里发出**（见 `core/amcu.py::mtop_post`），不是从 Python 发：
+    `cookie2` 是 httpOnly，Python 侧永远拿不到，只有让浏览器自己带上它才能通过鉴权。
+    因此这里也不再需要上游那套 `_auto_refresh`（Playwright 点"快速进入"刷 cookie）——
+    页面本来就是活的登录态，`_m_h5_tk` 每次现取，没有"快照过期"这回事。
     """
     url = f"{MTOP_HOST}/h5/{api}/{version}/"
     t_ms = str(int(time.time() * 1000))
     data_val = data if isinstance(data, str) else json.dumps(data, separators=(",", ":"))
 
-    token = session.h5_token
+    token = _h5_token(session)
     if not token:
-        raise AuthRequiredError("_m_h5_tk 缺失，请重新登录并导出 cookie")
+        raise AuthRequiredError(
+            "_m_h5_tk 拿不到：请确认浏览器已登录 https://www.goofish.com，"
+            "且 `amcu browser doctor` 显示扩展已连接"
+        )
     sign = generate_sign(t_ms, token, data_val)
 
     params = {
@@ -105,53 +108,29 @@ def call(
     if extra_params:
         params.update(extra_params)
 
-    resp = session.http.post(
-        url,
-        params=params,
-        headers=headers or default_headers(),
-        data={"data": data_val},
-        timeout=30,
-    )
-    raw = resp.json()
-    try:
-        _classify_error(raw, api)
-    except AuthRequiredError as e:
-        # token 层（_m_h5_tk 过期）和 session 层（cookie2/sgcookie 失效）都可以通过
-        # Playwright goto 闲鱼首页 → 点 passport 弹窗的"快速进入"免密记忆登录恢复。
-        # v0.2.3 起统一由 refresh_cookies_via_browser 处理；`ILLEGAL_ACCESS` 是风控
-        # 层面问题，刷 cookie 也救不了，不在可恢复列表内。
-        if not (_auto_refresh and _is_recoverable_auth_error(e)):
-            raise
-        from goofish_cli.core.refresh import is_enabled, refresh_cookies_via_browser
-        if not is_enabled():
-            raise
-        logger.info(f"[{api}] 检测到登录态失效，尝试 Playwright 免密登录刷新 cookie…")
-        if not refresh_cookies_via_browser(session):
-            raise
-        # 刷新成功：重试一次，禁用递归自动刷新
-        return call(
-            session, api, data,
-            version=version, spm_cnt=spm_cnt,
-            extra_params=extra_params, headers=headers,
-            _auto_refresh=False,
-        )
+    # 惰性 import：amcu 里反过来要用 core.browser，顶层互引会绕成循环。
+    from goofish_cli.core.amcu import mtop_post
+
+    raw = json.loads(mtop_post(f"{url}?{urlencode(params)}", data_val))
+    _classify_error(raw, api)
     return raw
 
 
-def _is_recoverable_auth_error(e: AuthRequiredError) -> bool:
-    """可通过 Playwright 自动刷新恢复的登录态失效错误码。
+def _h5_token(session: Session) -> str:
+    """取 `_m_h5_tk` 的签名段，优先问浏览器页面。
 
-    - TOKEN_EXOIRED / TOKEN_EMPTY / 令牌过期 → h5_tk 层，goto 首页即续
-    - SESSION_EXPIRED → session 层，点'快速进入'免密记忆登录恢复
-    - ILLEGAL_ACCESS → 风控层，不在此列（救不了）
+    磁盘快照里的 `_m_h5_tk` 只有 10 分钟寿命，常常"抓的时候没过期、用的时候已过"。
+    页面里的那份是浏览器活跃访问时被 Set-Cookie 持续续期的，永远新鲜。
+    页面取不到（amcu 没连上等）才退回 session 里的快照，让错误信息更准。
     """
-    msg = str(e)
-    return any(kw in msg for kw in (
-        "FAIL_SYS_TOKEN_EXOIRED",
-        "FAIL_SYS_TOKEN_EMPTY",
-        "FAIL_SYS_SESSION_EXPIRED",
-        "令牌过期",
-    ))
+    try:
+        from goofish_cli.core.amcu import h5_token_from_page
+        token = h5_token_from_page()
+        if token:
+            return token
+    except Exception as e:  # noqa: BLE001 — 退回磁盘快照，由调用方报错
+        logger.debug(f"从页面取 _m_h5_tk 失败（回退磁盘快照）：{e}")
+    return session.h5_token
 
 
 def _classify_error(raw: dict[str, Any], api: str) -> None:

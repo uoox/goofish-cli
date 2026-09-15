@@ -47,11 +47,12 @@ metadata:
 ## 账号与登录态
 
 - 登录态由 `auth_status` 检查，返回 `{valid: bool}`。
-- 自动刷新链路已内置（v0.2.2 - v0.2.4）：token 过期自动续、session 过期
-  自动点 passport "快速进入"、浏览器免密失效需用户 `goofish auth login --qr`。
+- 登录态就是**用户自己 Chrome 里的闲鱼登录态**：mtop 请求在页面内发出，
+  `cookie2` 由浏览器自动附带。没有扫码流程，也没有"自动续命"链路（都已删除）。
+- `auth_status` 返回 invalid，等于用户在浏览器里掉登录了——提示他打开并登录
+  https://www.goofish.com 即可。注意**闲鱼匿名也能搜索**，所以"搜索还正常"
+  不能拿来判断登录还在。
 - **Agent 不应主动调 `auth_login`**，这是敏感命令（会覆盖磁盘 cookie）。
-  只在 `auth_status` 返回 invalid 时提示用户手动 `goofish auth login` 或
-  `goofish auth login --qr`。
 - 账号身份细节见 `references/accounts.md`。
 
 ## 17 个 MCP 工具速查

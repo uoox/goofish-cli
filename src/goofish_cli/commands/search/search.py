@@ -214,7 +214,7 @@ async def _walk_pages(
     """翻页状态机：点右箭头 → 等重渲染 → 去重累积。
 
     返回 (fetched_pages, total_pages, stopped_reason)。任何翻页途中的
-    Playwright 异常（SPA 重渲染销毁执行上下文等）都被吞掉并优雅终止——
+    浏览器异常（SPA 重渲染销毁执行上下文等）都被吞掉并优雅终止——
     调用方拿到已累积的部分结果，stopped_reason 说明终止原因。
 
     锚点（cur_first_id）始终取**未过滤**的下一页 payload 首卡：

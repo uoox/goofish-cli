@@ -16,7 +16,7 @@
 
 实现方式：把 `amcu browser <verb> --json` 子命令包装成一组与 Playwright
 `Page` **同签名**的对象，因此 `commands/search`、`commands/item/view`、
-`core/refresh`、`core/qr_login` 这些调用方**一行都不用改**。
+`commands/search`、`commands/item/view` 这些调用方**一行都不用改**。
 
 覆盖到的 Playwright 接口（调用方实际用到的全集）：
     page.goto / evaluate / wait_for_timeout / wait_for_selector / query_selector
@@ -488,6 +488,89 @@ async def acookies_from_profile(url: str = "https://www.goofish.com/") -> list[d
 def cookies_from_profile(url: str = "https://www.goofish.com/") -> list[dict[str, Any]]:
     """`acookies_from_profile` 的同步封装；auth / session 两处都是同步调用方。"""
     return asyncio.run(acookies_from_profile(url))
+
+
+# ── mtop 传输层：请求在页面里发，cookie2 由浏览器自己带上 ──────────────────────
+#
+# 上游是在 Python 里用 httpx 发 mtop 请求，登录态得自己灌进去。问题是 `cookie2`
+# （真正的 session token）是 httpOnly：`document.cookie` 读不到，browser_cookie3
+# 又被 Chrome 的 app-bound 加密挡着。于是 Python 侧永远凑不齐登录态，mtop 一律
+# 回 FAIL_SYS_SESSION_EXPIRED——上游那套 refresh（点"快速进入"）和 qr_login（扫码）
+# 存在的唯一理由，就是想方设法把 cookie2 弄到手。
+#
+# 换个方向就解了：**不去读 cookie2，让浏览器自己带上它**。把请求改在 goofish.com
+# 页面内用 fetch(credentials:'include') 发出，cookie2 作为同站 cookie 由浏览器自动
+# 附加，我们全程不需要看见它。这也正是真实闲鱼网页的做法，风控画像与日常浏览同源。
+MTOP_PAGE_URL = "https://www.goofish.com/"
+_MTOP_TAB: AmcuPage | None = None
+
+
+async def _mtop_tab() -> AmcuPage:
+    """进程内复用一个停在闲鱼站内的后台标签页。
+
+    每条 mtop 都新开标签页太贵（导航一次 3~6s），还平白多出一堆站内请求招风控。
+    这里开一次、整个进程复用；标签页被关掉了就自动重开。
+    """
+    global _MTOP_TAB
+    if _MTOP_TAB is not None:
+        try:
+            if await _MTOP_TAB.evaluate("() => location.host"):
+                return _MTOP_TAB
+        except Exception:  # noqa: BLE001 — 标签页没了/失效就重开一个
+            _MTOP_TAB = None
+    result = await arun("tab", "--new", "--url", MTOP_PAGE_URL)
+    tab_id = (result.get("tab") or {}).get("id")
+    if tab_id is None:
+        raise AmcuError("no_tab", "amcu 没有返回新标签页的 id")
+    page = AmcuPage(str(tab_id))
+    # tab --new 只保证标签页开了，不保证文档就绪；显式导航一次并等它加载完，
+    # 否则首条 fetch 可能发生在 about:blank 上，那是另一个 origin，cookie 不会带。
+    await page.goto(MTOP_PAGE_URL)
+    _MTOP_TAB = page
+    logger.debug(f"[amcu] mtop 传输标签页 {tab_id} 就绪")
+    return page
+
+
+# 注意 credentials:'include'——没有它跨到 h5api.m.goofish.com 就不带 cookie。
+# 返回 text 而不是 json()，好让调用方自己分类错误（mtop 出错时也是 200 + JSON）。
+_MTOP_FETCH_JS = r"""
+(spec) => fetch(spec.url, {
+  method: 'POST',
+  credentials: 'include',
+  headers: {'content-type': 'application/x-www-form-urlencoded'},
+  body: 'data=' + encodeURIComponent(spec.data),
+}).then(r => r.text())
+"""
+
+
+async def amtop_post(url: str, data_val: str) -> str:
+    page = await _mtop_tab()
+    return await page.evaluate(_MTOP_FETCH_JS, {"url": url, "data": data_val})
+
+
+def mtop_post(url: str, data_val: str) -> str:
+    """`amtop_post` 的同步封装——`core/mtop.py::call()` 是同步的。"""
+    return asyncio.run(amtop_post(url, data_val))
+
+
+_H5_TOKEN_JS = r"""
+() => (document.cookie.match(/(?:^|;\s*)_m_h5_tk=([^;]+)/) || ['', ''])[1]
+"""
+
+
+async def ah5_token_from_page() -> str:
+    """从页面实时读 `_m_h5_tk` 的签名段（`_` 之前那截）。
+
+    这个 cookie 只有 10 分钟有效期，靠浏览器活跃访问闲鱼时 Set-Cookie 续期。
+    从磁盘快照里读经常是"抓的时候没过期、用的时候已过"——上游为此专门写了一整套
+    refresh 流程。直接问页面就永远是新鲜的，那套流程也就不需要了。
+    """
+    page = await _mtop_tab()
+    return ((await page.evaluate(_H5_TOKEN_JS)) or "").split("_")[0]
+
+
+def h5_token_from_page() -> str:
+    return asyncio.run(ah5_token_from_page())
 
 
 def profile_auth_available() -> bool:

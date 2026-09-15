@@ -40,20 +40,58 @@ def test_classify_not_found():
         _classify_error({"ret": ["FAIL_BIZ_ITEM_NOT_FOUND::商品不存在"]}, "mtop.test")
 
 
-@pytest.mark.parametrize(
-    "msg,expected",
-    [
-        ("[api] 登录态失效：FAIL_SYS_TOKEN_EXOIRED::令牌过期", True),
-        ("[api] 登录态失效：FAIL_SYS_TOKEN_EMPTY::令牌为空", True),
-        ("[api] 登录态失效：FAIL_SYS_SESSION_EXPIRED::Session过期", True),
-        ("[api] 登录态失效：令牌过期", True),
-        # 风控/权限类刷 cookie 救不了，不触发自动刷新
-        ("[api] 登录态失效：FAIL_SYS_ILLEGAL_ACCESS::非法访问", False),
-        ("[api] 未找到：FAIL_BIZ_ITEM_NOT_FOUND", False),
-    ],
-)
-def test_is_recoverable_auth_error(msg, expected):
-    from goofish_cli.core.errors import AuthRequiredError
-    from goofish_cli.core.mtop import _is_recoverable_auth_error
+def test_call_goes_through_the_page_not_httpx(monkeypatch):
+    """mtop 请求必须由浏览器页面发出，不能退回从 Python 直发。
 
-    assert _is_recoverable_auth_error(AuthRequiredError(msg)) is expected
+    `cookie2`（真正的 session token）是 httpOnly：Python 侧读不到，也灌不进去。
+    从进程里发的 mtop 一律 FAIL_SYS_SESSION_EXPIRED，所以传输层一旦被改回 httpx，
+    整个鉴权就失效。这条盯住那个接缝——签名仍在 Python 算，请求交给页面发。
+    """
+    from goofish_cli.core import amcu, mtop
+
+    sent = {}
+
+    def fake_post(url: str, data_val: str) -> str:
+        sent["url"], sent["data"] = url, data_val
+        return '{"ret":["SUCCESS::调用成功"],"data":{"ok":1}}'
+
+    monkeypatch.setattr(amcu, "mtop_post", fake_post)
+    monkeypatch.setattr(mtop, "_h5_token", lambda _session: "tok")
+    monkeypatch.setattr(mtop, "generate_sign", lambda t, token, data: "sig")
+
+    raw = mtop.call(object(), "mtop.test.api", {"a": 1})
+
+    assert raw["data"] == {"ok": 1}
+    assert sent["data"] == '{"a":1}'
+    assert "sign=sig" in sent["url"]
+    assert "api=mtop.test.api" in sent["url"]
+
+
+def test_h5_token_prefers_the_live_page(monkeypatch):
+    """`_m_h5_tk` 只有 10 分钟寿命，磁盘快照常常"抓时没过期、用时已过"。
+
+    页面里那份由浏览器活跃访问时持续续期，所以要优先用它；页面拿不到才回退快照。
+    """
+    from goofish_cli.core import amcu, mtop
+
+    monkeypatch.setattr(amcu, "h5_token_from_page", lambda: "fresh")
+
+    class _S:
+        h5_token = "stale"
+
+    assert mtop._h5_token(_S()) == "fresh"
+
+
+def test_h5_token_falls_back_to_snapshot_when_page_unavailable(monkeypatch):
+    """amcu 没连上时不能直接炸——回退磁盘快照，让报错停在更准确的地方。"""
+    from goofish_cli.core import amcu, mtop
+
+    def _boom() -> str:
+        raise RuntimeError("amcu 没连上")
+
+    monkeypatch.setattr(amcu, "h5_token_from_page", _boom)
+
+    class _S:
+        h5_token = "stale"
+
+    assert mtop._h5_token(_S()) == "stale"

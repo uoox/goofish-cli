@@ -43,11 +43,15 @@
 
 > [!NOTE]
 > **本仓库是 [fancyboi999/goofish-cli](https://github.com/fancyboi999/goofish-cli) 的 fork，
-> 只改一件事：浏览器层默认走 [amcu](https://github.com/uoox/amcu) 而不是 Playwright。**
+> 只改一件事：浏览器层只走 [amcu](https://github.com/uoox/amcu)，Playwright 已彻底移除。**
 > 上游每次搜索都会新起一个系统 Chrome、开一个可见窗口（无头会被闲鱼风控拦）；
 > 本 fork 直接用你已经开着、已经登录的那个 Chrome，标签页开在后台窗口里，
-> 不弹窗、不抢焦点、不新建 profile。调用方代码一行未改，
-> `GOOFISH_BROWSER_BACKEND=playwright` 可切回上游路线。
+> 不弹窗、不抢焦点、不新建 profile。
+>
+> 连带的一个好处：**mtop 请求改在页面里发**，`cookie2` 由浏览器自动附带。
+> 这个 cookie 是 httpOnly，Python 侧永远读不到——上游为此写了"快速进入"免密刷新和
+> 扫码登录两套机制去凑它，本 fork 直接把前提取消了：不去读它，让浏览器自己带上。
+> 登录方式因此就是**你在自己的 Chrome 里登录闲鱼**，不需要 `auth login --qr`。
 > 细节见 [docs/amcu-backend.md](docs/amcu-backend.md)。
 
 ---
@@ -128,8 +132,7 @@ OpenClaw `2026.6.1` 及以上可把本仓库作为 compatible bundle 加载。�
 ```bash
 openclaw plugins install clawhub:openclaw-goofish
 
-# 登录态由用户在终端初始化，不交给 Agent 覆盖
-uvx --from goofish-cli==0.4.0 goofish auth login --qr
+# 登录态来自你自己的 Chrome：打开并登录 https://www.goofish.com 即可，没有扫码命令
 
 openclaw plugins inspect goofish --json
 openclaw gateway restart

@@ -6,7 +6,7 @@ name: Sync upstream
 #
 # 策略：
 #   干净合并 + 守门检查通过 → 直接推 main
-#   有冲突，或上游把 Playwright 改回默认 → 不推 main，开一个 PR 让人来判
+#   有冲突，或上游把 Playwright 重新引入 → 不推 main，开一个 PR 让人来判
 on:
   schedule:
     - cron: "17 3 * * *"   # 每天 03:17 UTC
@@ -107,7 +107,7 @@ jobs:
           if [ "${{ steps.merge.outputs.merged }}" = "conflict" ]; then
             reason="合并有冲突，需要人工解决。"
           elif [ "${{ steps.guard.outcome }}" = "failure" ]; then
-            reason="合并干净，但**守门检查失败**：上游可能把 Playwright 改回了默认后端。合并时请保留 amcu 为默认。"
+            reason="合并干净，但**守门检查失败**：上游可能把 Playwright 重新引入了。合并时请保持 amcu 为唯一后端。"
           else
             reason="合并干净、守门通过，但测试挂了。"
           fi
@@ -117,5 +117,5 @@ jobs:
             --body "$(printf '%s\n\n%s\n\n%s\n' \
               "自动同步 upstream/main 时没能直接推进 main。" \
               "**原因**：$reason" \
-              "本 fork 的既定差异：默认浏览器后端是 amcu（\`core/amcu.py\`），Playwright 仅作可选回退。合并后请跑 \`python scripts/check_amcu_backend.py\` 确认。")" \
+              "本 fork 的既定差异：浏览器层只走 amcu（\`core/amcu.py\`），Playwright 已彻底移除，mtop 走页内 fetch。合并后请跑 \`python scripts/check_amcu_backend.py\` 确认。")" \
             --base main --head "$branch" || echo "PR 可能已存在"

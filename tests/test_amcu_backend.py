@@ -149,9 +149,14 @@ def test_default_backend_is_amcu(monkeypatch):
     assert browser.backend() == browser.BACKEND_AMCU
 
 
-def test_backend_can_be_switched_to_playwright(monkeypatch):
+def test_legacy_backend_override_is_ignored(monkeypatch):
+    """上游那条后端已整个移除：显式指定也只会回 amcu（只告警，不改行为）。
+
+    它靠把 cookie 灌进空白 profile 来带登录态，而 cookie2 是 httpOnly、Python 侧
+    拿不到，那条路上的 mtop 必然 SESSION_EXPIRED——留着只会是个必然失败的陷阱。
+    """
     monkeypatch.setenv("GOOFISH_BROWSER_BACKEND", "playwright")
-    assert browser.backend() == browser.BACKEND_PLAYWRIGHT
+    assert browser.backend() == browser.BACKEND_AMCU
 
 
 def test_unknown_backend_falls_back_to_amcu(monkeypatch):
@@ -159,8 +164,12 @@ def test_unknown_backend_falls_back_to_amcu(monkeypatch):
     assert browser.backend() == browser.BACKEND_AMCU
 
 
-async def test_goofish_page_uses_amcu_without_playwright_installed(monkeypatch):
-    """核心回归：默认路径下不能 import playwright（本 fork 不装它也要能跑）。"""
+async def test_goofish_page_always_uses_amcu(monkeypatch):
+    """核心回归：`goofish_page()` 只能开 amcu 后台标签页，不能有第二条浏览器路线。
+
+    上游那条（Playwright + 空白 profile + 灌 cookie）已整个删除，不是"默认不走"：
+    它带不上 httpOnly 的 cookie2，留着就是个必然鉴权失败的陷阱。
+    """
     monkeypatch.delenv("GOOFISH_BROWSER_BACKEND", raising=False)
     seen = {}
 
