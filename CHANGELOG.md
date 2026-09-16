@@ -6,6 +6,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+- **`item get` 字段全空**：`mtop.taobao.idle.pc.detail` 的详情主体早已搬到
+  `data.itemDO` / `data.sellerDO` / `itemLabelExtList`，老实现只读
+  `data.trackParams`（现在只剩埋点字段），title/price/seller_nick 一律空串。
+  重写字段抽取与 `item view`（浏览器路径）完全对齐：title / description /
+  price / original_price / want_count / collect_count / browse_count / status /
+  condition / brand / category / location / seller_name / seller_id /
+  seller_score / reply_ratio_24h / reply_interval / seller_url / image_urls。
+  商品不存在（itemDO 无 title）抛 `NotFoundError`；完整响应体挪到 `--raw` 开关。
+
 ### Changed
 - **mtop 请求改由浏览器页面发出**（`core/amcu.py::mtop_post`）。`cookie2`（真正的
   session token）是 httpOnly，Python 进程既读不到也灌不进去，从进程直发的 mtop

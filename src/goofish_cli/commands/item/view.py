@@ -1,13 +1,12 @@
 """item view — 浏览器视角的商品详情。对标 OpenCLI `xianyu/item.js`。
 
-`item get` 已经在 CLI 里直签调 `mtop.taobao.idle.pc.detail` v1.0，字段浅抽（5 项）。
+`item get` 已经在 CLI 里直签调 `mtop.taobao.idle.pc.detail` v1.0，抽同样的
+`itemDO / sellerDO / itemLabelExtList` 字段（快、不需要 Chrome）。
 `item view` 在真实 Chrome 的商品页上下文里调同一 API（走 `window.lib.mtop.request`），
 好处：
 
-1. **字段完整**：直接按 OpenCLI 的提取器从 `data.itemDO / data.sellerDO / itemLabelExtList`
-   抽 20+ 字段（description / want_count / browse_count / 成色 / 品牌 / image_urls /
-   seller_score / reply_ratio_24h 等）。
-2. **抗风控兜底**：CLI 直签偶尔遇到 x5sec / h5_token 失效，浏览器路径作为备份链路。
+1. **抗风控兜底**：CLI 直签偶尔遇到 x5sec / h5_token 失效，浏览器路径作为备份链路。
+2. **页面级信号**：能识别验证码/安全验证拦截页（body 文案），直签路径看不到页面状态。
 
 保留 `item get`（快且不需要 Chrome），两条路并存。用户根据场景选。
 """

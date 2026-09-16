@@ -168,7 +168,7 @@ $ goofish list-commands --format table
 | `auth login` | 从 JSON 文件或 cookie 字符串导入登录态 | ❌ |
 | `auth status` | 检查登录态是否有效 | ❌ |
 | `auth reset-guard` | 手动解除风控熔断 | ❌ |
-| `item get` | 查询闲鱼商品详情 | ❌ |
+| `item get` | 查询闲鱼商品详情（API 直签，字段与 `item view` 对齐） | ❌ |
 | `item publish` | 发布商品（自动识别类目 + 默认地址） | ✅ |
 | `item delete` | 下架/删除商品 | ✅ |
 | `media upload` | 上传图片到闲鱼 CDN | ✅ |
